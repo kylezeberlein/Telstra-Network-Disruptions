@@ -18,21 +18,16 @@ resource_type = pd.read_csv('data//resource_type.csv')
 # convert event_type from long to wide
 event_wide = event_type.pivot(index='id', columns='event_type', values='id')
 
-# merge train and log_feature
-train = train.merge(log_feature, on='id')
+# convert resource_type from long to wide
+resource_wide = resource_type.pivot(index='id', columns='resource_type', values='id')
 
-# merge train and resource_type
-train = train.merge(resource_type, on='id')
+# convert log_features from long to wide using volume as value
+log_feature_wide = log_feature.pivot(index='id', columns='log_feature', values='volume')
 
 # join datasets
-train = train.join([severity_type, event_wide])
+train = train.join([severity_type, event_wide, resource_wide, log_feature_wide])
 
 # explore data
 print(train.columns)
-print(event_type.columns)
-
-
-print(train.head())
-print(event_type.head())
 
 # clean data
