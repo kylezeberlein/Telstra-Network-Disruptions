@@ -11,7 +11,6 @@ from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import log_loss
 from sklearn.externals import joblib
 
 # read data
@@ -20,7 +19,7 @@ severity_type = pd.read_csv('data//severity_type.csv', index_col='id')
 event_type    = pd.read_csv('data//event_type.csv')
 log_feature   = pd.read_csv('data//log_feature.csv')
 resource_type = pd.read_csv('data//resource_type.csv')
-X_test        = pd.read_csv('data//test.csv', index_col='id')
+test          = pd.read_csv('data//test.csv', index_col='id')
 
 
 # convert event_type from long to wide & impute
@@ -47,13 +46,13 @@ for col in cat_vars:
 train = pd.get_dummies(train, drop_first=True)
 
 # split into X and y
-X = train.drop('fault_severity', axis=1).as_matrix()
-y = train[['fault_severity']].as_matrix()
+X = train.drop('fault_severity', axis=1)
+y = train[['fault_severity']]
 
 y = y.squeeze() # convert 1D array https://stackoverflow.com/questions/34337093/why-am-i-getting-a-data-conversion-warning
 
 # split into training & validation
-X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=0.20, random_state=3339)
+X_train, X_valid, y_train, y_valid = train_test_split(X.as_matrix(), y.as_matrix(), test_size=0.20, random_state=3339)
 
 # modeling building/comparison
 
@@ -62,12 +61,26 @@ pipeline = Pipeline([
     ('clf', RandomForestClassifier())
 ])
 
-parameters = {'clf__n_estimators': [10, 100, 500],
-			  'clf__max_features': ('auto', 'log2')
+pipeline = Pipeline([
+    ('clf', RandomForestClassifier())
+])
+
+'''
+parameters = {'clf__n_estimators': [500],
+			  'clf__max_features': ('auto', 'log2'),
+			  'clf__max_depth': range(1,11),
+			  'clf__max_features': range(1,6),
+			  'clf__bootstrap': (True, False)
 			  }
+'''
+parameters = {'clf__n_estimators': [10, 100, 500],
+              'clf__max_features': ('auto', 'log2')
+			  }
+
 
 # Used this resource for helping set up Pipeline
 # https://www.kaggle.com/giovannibruner/randomforest-with-gridsearchcv
+# cv = GridSearchCV(pipeline, parameters, scoring='neg_log_loss', verbose=1)
 cv = GridSearchCV(pipeline, parameters, scoring='neg_log_loss', verbose=1)
 
 # fit model on training data
@@ -80,22 +93,70 @@ y_preds = cv.predict(X_valid)
 print(cv.score(X_valid, y_valid))
 print(cv.best_params_)
 
+# save best model
+final_model = cv.best_estimator_
+
 # pickle model
 # https://machinelearningmastery.com/save-load-machine-learning-models-python-scikit-learn/
-pickled_file = 'models//random_forest_regressor.sav'
-joblib.dump(cv, pickled_file)
+pickled_file = 'models//random_forest_regressor_3.sav'
+joblib.dump(final_model, pickled_file)
 
 # load model
-# cv = joblib.load(pickled_file))
+# final_model = joblib.load(pickled_file)
 
 # merge datasets with test data
-X_test = X_test.join([severity_type, event_wide, resource_wide, log_feature_wide])
+test = test.join([severity_type, event_wide, resource_wide, log_feature_wide])
+
+for col in cat_vars:
+    test[col] = test[col].astype('category')
+
+test = pd.get_dummies(test, drop_first=True)
+
+# ensure matching columns in train and test
+# https://stackoverflow.com/questions/41335718/keep-same-dummy-variable-in-training-and-testing-data
+
+# Get missing columns in the training test
+missing_cols = set( X.columns ) - set( test.columns )
+# Add a missing column in test set with default value equal to 0
+for c in missing_cols:
+    test[c] = 0
+# Ensure the order of column in the test set is in the same order than in train set
+test = test[X.columns]
+
+X_test = test.as_matrix()
 
 # create model on full training set
-# cv.fit(X, y)
+final_model.fit(X.as_matrix(), y.as_matrix())
 
 # predict on test dataset
-# y_preds = cv.predict(X_test)
+y_preds_final = final_model.predict(X_test)
 
 # output results
-header = ['id', 'predict_0', 'predict_1', 'predict_2']
+predict_0 = []
+predict_1 = []
+predict_2 = []
+
+for pred in y_preds_final:
+	if pred == 0:
+		predict_0.append(1)
+		predict_1.append(0)
+		predict_2.append(0)
+	elif pred == 1:
+		predict_0.append(0)
+		predict_1.append(1)
+		predict_2.append(0)
+	else:
+		predict_0.append(0)
+		predict_1.append(0)
+		predict_2.append(1)
+
+test_preds_data = {'id': test.index,
+					'predict_0': predict_0,
+					'predict_1': predict_1,
+					'predict_2': predict_2
+					}
+
+submission = pd.DataFrame(data=test_preds_data)
+
+# submit predictions
+submission.to_csv('kaggle_submission3.csv', index=False)
