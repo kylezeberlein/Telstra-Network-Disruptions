@@ -103,6 +103,9 @@ ENV/
 # data
 data/
 
+# models
+models/
+
 # onenote
 *.onetoc2
 
